@@ -1,0 +1,120 @@
+name: Free Moonlight Gamer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 300
+
+    steps:
+
+      - name: Configurar senha e criar gamer
+        shell: powershell
+        run: |
+          Write-Host "Configurando politica de senha..."
+
+          # Desativa temporariamente a exigencia de senha complexa
+          secedit /export /cfg C:\security.cfg
+
+          (Get-Content C:\security.cfg) `
+            -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' `
+            -replace 'MinimumPasswordLength = \d+', 'MinimumPasswordLength = 6' |
+            Set-Content C:\security.cfg
+
+          secedit /configure /db C:\Windows\Security\Database\security.sdb /cfg C:\security.cfg /areas SECURITYPOLICY
+
+          Start-Sleep -Seconds 2
+
+          Write-Host "Criando usuario gamer..."
+
+          # Apaga somente se existir
+          $old = Get-LocalUser -Name "gamer" -ErrorAction SilentlyContinue
+
+          if ($old) {
+              Remove-LocalUser -Name "gamer"
+              Write-Host "Usuario antigo removido."
+          }
+
+          # Cria o usuario
+          $senha = ConvertTo-SecureString "Gamer2026" -AsPlainText -Force
+
+          New-LocalUser `
+            -Name "gamer" `
+            -Password $senha `
+            -FullName "Gamer" `
+            -Description "Windows Gamer"
+
+          # Administrador
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member "gamer"
+
+          Write-Host ""
+          Write-Host "================================"
+          Write-Host "USUARIO: gamer"
+          Write-Host "SENHA: Gamer2026"
+          Write-Host "================================"
+
+      - name: Ativar RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Write-Host "RDP ativado."
+
+      - name: Ativar audio
+        shell: powershell
+        run: |
+          Write-Host "Ativando audio do Windows..."
+
+          Set-Service Audiosrv -StartupType Automatic
+          Set-Service AudioEndpointBuilder -StartupType Automatic
+
+          Start-Service AudioEndpointBuilder -ErrorAction SilentlyContinue
+          Start-Service Audiosrv -ErrorAction SilentlyContinue
+
+          Write-Host "Audio ativado."
+
+      - name: Configurar audio RDP
+        shell: powershell
+        run: |
+          $path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+
+          New-Item -Path $path -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path $path `
+            -Name "fDisableAudioPlayback" `
+            -Type DWord `
+            -Value 0
+
+          Write-Host "Audio RDP configurado."
+
+      - name: Mostrar informacoes
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "       WINDOWS GAMER PRONTO"
+          Write-Host "========================================"
+          Write-Host "Usuario: gamer"
+          Write-Host "Senha:   Gamer2026"
+          Write-Host "========================================"
+          Write-Host ""
+
+      - name: Manter maquina ligada
+        shell: powershell
+        run: |
+          Write-Host "Maquina ativa."
+          Write-Host "Nao encerre o workflow."
+
+          while ($true) {
+              Start-Sleep -Seconds 30
+          }
