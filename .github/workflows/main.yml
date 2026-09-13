@@ -1,0 +1,127 @@
+name: Free Moonlight Gamer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gamer:
+    runs-on: windows-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Criar usuário gamer
+        shell: powershell
+        run: |
+          $Password = -join ((48..57) + (65..90) + (97..122) |
+            Get-Random -Count 16 |
+            ForEach-Object {[char]$_})
+
+          $SecurePassword = ConvertTo-SecureString $Password -AsPlainText -Force
+
+          New-LocalUser `
+            -Name "gamer" `
+            -Password $SecurePassword `
+            -FullName "Gamer" `
+            -Description "Conta Gamer"
+
+          Add-LocalGroupMember -Group "Administrators" -Member "gamer"
+
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host "       DADOS DO WINDOWS"
+          Write-Host "=============================================="
+          Write-Host "USUARIO: gamer"
+          Write-Host "SENHA: $Password"
+          Write-Host "=============================================="
+
+      - name: Ativar RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+      - name: Instalar Sunshine
+        shell: powershell
+        run: |
+          $release = Invoke-RestMethod `
+            -Uri "https://api.github.com/repos/LizardByte/Sunshine/releases/latest"
+
+          $asset = $release.assets |
+            Where-Object {
+              $_.name -match "windows" -and
+              $_.name -match "\.exe$"
+            } |
+            Select-Object -First 1
+
+          if (-not $asset) {
+            throw "Não encontrei o instalador do Sunshine."
+          }
+
+          $installer = "$env:TEMP\sunshine.exe"
+
+          Invoke-WebRequest `
+            -Uri $asset.browser_download_url `
+            -OutFile $installer
+
+          Start-Process `
+            -FilePath $installer `
+            -ArgumentList "/S" `
+            -Wait
+
+      - name: Configurar firewall do Sunshine
+        shell: powershell
+        run: |
+          New-NetFirewallRule `
+            -DisplayName "Sunshine TCP" `
+            -Direction Inbound `
+            -Protocol TCP `
+            -LocalPort 47984,47989,47990,48010 `
+            -Action Allow `
+            -ErrorAction SilentlyContinue
+
+          New-NetFirewallRule `
+            -DisplayName "Sunshine UDP" `
+            -Direction Inbound `
+            -Protocol UDP `
+            -LocalPort 47998,47999,48000,48002,48010 `
+            -Action Allow `
+            -ErrorAction SilentlyContinue
+
+      - name: Mostrar IPs
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host "       ENDERECOS IP DO WINDOWS"
+          Write-Host "=============================================="
+
+          Get-NetIPAddress -AddressFamily IPv4 |
+            Where-Object {
+              $_.IPAddress -notlike "127.*"
+            } |
+            Select-Object IPAddress, InterfaceAlias |
+            Format-Table -AutoSize
+
+          Write-Host ""
+          Write-Host "Sunshine Web UI:"
+          Write-Host "https://localhost:47990"
+          Write-Host ""
+          Write-Host "IMPORTANTE:"
+          Write-Host "Sem Tailscale, o IP acima pode NAO ser acessivel"
+          Write-Host "pelo seu celular através da Internet."
+          Write-Host "=============================================="
+
+      - name: Manter Windows ligado
+        shell: powershell
+        run: |
+          Write-Host "Windows Gamer ativo."
+          Write-Host "Mantendo o workflow em execução..."
+
+          while ($true) {
+            Write-Host "Sessão ativa: $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }
