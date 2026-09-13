@@ -1,0 +1,141 @@
+name: Windows Gamer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gamer:
+    runs-on: windows-latest
+    timeout-minutes: 300
+
+    steps:
+
+      - name: Criar usuario gamer
+        shell: powershell
+        run: |
+          Write-Host "Configurando usuario..."
+
+          $policy = "C:\security.cfg"
+
+          secedit /export /cfg $policy | Out-Null
+
+          (Get-Content $policy) `
+            -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' `
+            -replace 'MinimumPasswordLength = \d+', 'MinimumPasswordLength = 6' |
+            Set-Content $policy
+
+          secedit /configure /db C:\Windows\Security\Database\security.sdb /cfg $policy /areas SECURITYPOLICY | Out-Null
+
+          $old = Get-LocalUser -Name "gamer" -ErrorAction SilentlyContinue
+
+          if ($old) {
+              Remove-LocalUser -Name "gamer"
+          }
+
+          $password = ConvertTo-SecureString "Gamer2026" -AsPlainText -Force
+
+          New-LocalUser `
+            -Name "gamer" `
+            -Password $password `
+            -FullName "Gamer" `
+            -Description "Gaming User" `
+            -PasswordNeverExpires
+
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member "gamer"
+
+          Write-Host "Usuario gamer criado."
+
+      - name: Ativar RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Write-Host "RDP ativado."
+
+      - name: Ativar audio
+        shell: powershell
+        run: |
+          Set-Service -Name Audiosrv -StartupType Automatic
+          Set-Service -Name AudioEndpointBuilder -StartupType Automatic
+
+          Start-Service AudioEndpointBuilder -ErrorAction SilentlyContinue
+          Start-Service Audiosrv -ErrorAction SilentlyContinue
+
+          Write-Host "Audio ativado."
+
+      - name: Instalar Tailscale
+        shell: powershell
+        run: |
+          Write-Host "Baixando Tailscale..."
+
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $installer = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest -Uri $url -OutFile $installer
+
+          Start-Process msiexec.exe `
+            -ArgumentList "/i `"$installer`" /qn /norestart" `
+            -Wait
+
+          Write-Host "Tailscale instalado."
+
+      - name: Conectar Tailscale
+        shell: powershell
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TS_AUTHKEY)) {
+              Write-Error "O Secret TS_AUTHKEY nao foi configurado no GitHub."
+              exit 1
+          }
+
+          $tailscale = "C:\Program Files\Tailscale\tailscale.exe"
+
+          if (!(Test-Path $tailscale)) {
+              Write-Error "Tailscale nao foi encontrado."
+              exit 1
+          }
+
+          Write-Host "Conectando ao Tailscale..."
+
+          & $tailscale up `
+            --auth-key="$env:TS_AUTHKEY" `
+            --hostname="windows-gamer"
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Falha ao conectar ao Tailscale."
+              exit 1
+          }
+
+          Start-Sleep -Seconds 5
+
+          $ip = & $tailscale ip -4
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "        WINDOWS GAMER ONLINE"
+          Write-Host "========================================"
+          Write-Host "USUARIO: gamer"
+          Write-Host "SENHA:   Gamer2026"
+          Write-Host "IP TAILSCALE: $ip"
+          Write-Host "RDP: $ip`:3389"
+          Write-Host "========================================"
+          Write-Host ""
+
+      - name: Manter maquina ligada
+        shell: powershell
+        run: |
+          Write-Host "Maquina funcionando."
+          Write-Host "Tailscale conectado."
+          Write-Host "Nao encerre este workflow."
+
+          while ($true) {
+              Start-Sleep -Seconds 30
+          }
