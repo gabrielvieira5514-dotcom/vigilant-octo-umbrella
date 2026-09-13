@@ -1,0 +1,118 @@
+name: Free Moonlight Gamer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 300
+
+    steps:
+
+      - name: Criar usuario gamer
+        shell: powershell
+        run: |
+          $user = "gamer"
+          $password = "Gamer@2026X9"
+
+          $existing = Get-LocalUser -Name $user -ErrorAction SilentlyContinue
+
+          if ($existing) {
+              Write-Host "Usuario gamer ja existe."
+              cmd /c "net user gamer $password"
+          }
+          else {
+              Write-Host "Criando usuario gamer..."
+              cmd /c "net user gamer $password /add"
+
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Error "Falha ao criar o usuario gamer."
+                  exit 1
+              }
+          }
+
+          cmd /c "net localgroup Administrators gamer /add"
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Falha ao adicionar gamer aos administradores."
+              exit 1
+          }
+
+          "GAMER_USER=gamer" | Out-File $env:GITHUB_ENV -Append
+          "GAMER_PASSWORD=$password" | Out-File $env:GITHUB_ENV -Append
+
+          Write-Host "Usuario gamer criado com sucesso."
+
+      - name: Ativar RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "UserAuthentication" `
+            -Value 0
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+          Write-Host "RDP ativado."
+
+      - name: Ativar audio do Windows
+        shell: powershell
+        run: |
+          Write-Host "Configurando audio..."
+
+          Set-Service -Name Audiosrv -StartupType Automatic
+          Set-Service -Name AudioEndpointBuilder -StartupType Automatic
+
+          Start-Service AudioEndpointBuilder -ErrorAction SilentlyContinue
+          Start-Service Audiosrv -ErrorAction SilentlyContinue
+
+          Write-Host "Servicos de audio ativados."
+
+      - name: Configurar audio para RDP
+        shell: powershell
+        run: |
+          New-Item `
+            -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" `
+            -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" `
+            -Name "fDisableAudioCapture" `
+            -Type DWord `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" `
+            -Name "fDisableAudioPlayback" `
+            -Type DWord `
+            -Value 0
+
+          Write-Host "Audio RDP configurado."
+
+      - name: Mostrar informacoes
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "        WINDOWS GAMER"
+          Write-Host "========================================"
+          Write-Host "USUARIO: gamer"
+          Write-Host "SENHA:   Gamer@2026X9"
+          Write-Host "========================================"
+          Write-Host ""
+
+      - name: Manter maquina ligada
+        shell: powershell
+        run: |
+          Write-Host "Windows Gamer ativo."
+          Write-Host "Nao feche este workflow."
+
+          while ($true) {
+              Start-Sleep -Seconds 30
+          }
